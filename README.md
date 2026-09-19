@@ -36,3 +36,11 @@ Flap in short bursts — hens do not hover.
 ## Stack
 
 TanStack Start, React, Canvas 2D, Zustand.
+
+## Android
+
+A bundled APK (no website required) is built with Capacitor. Sideload `Cluckyard.apk` — Play Store listing still needs your Google Play account.
+
+```
+npm run android:apk
+```

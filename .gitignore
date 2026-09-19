@@ -9,5 +9,16 @@ artifacts
 *.local
 .node_modules.lock
 dist
+dist-android
 .DS_Store
 AGENTS.md
+android/.gradle
+android/build
+android/app/build
+android/app/.cxx
+android/local.properties
+android/captures
+android/.idea
+*.apk
+*.aab
+*.ap_
