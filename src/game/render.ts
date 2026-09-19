@@ -1,5 +1,5 @@
 import { drawSheet, type Assets } from "./assets";
-import { COOP, GROUND_Y, MAX_LEVEL, WORLD_W, type Sim } from "./sim";
+import { coverAt, COOP, GROUND_Y, MAX_LEVEL, WORLD_W, type Hunter, type Sim } from "./sim";
 
 function henSheet(assets: Assets, anim: Sim["hen"]["anim"]) {
   switch (anim) {
@@ -74,15 +74,25 @@ export function drawWorld(ctx: CanvasRenderingContext2D, assets: Assets, sim: Si
     if (p.kind === "fence") ctx.drawImage(assets.fence, p.x - 12, p.y - 8, p.w + 28, 130);
   }
 
+  for (const c of sim.covers) {
+    if (c.kind === "tree") ctx.drawImage(assets.tree, c.x - 18, c.y - 8, c.w + 36, c.h + 18);
+  }
+
   for (const g of sim.grains) {
     if (g.taken) continue;
     const bob = Math.sin(g.bob * 2.4) * 3;
     ctx.drawImage(assets.grain, g.x - 22, g.y - 28 + bob, 44, 36);
   }
 
-  drawFox(ctx, assets, sim);
+  drawCritters(ctx, assets, sim);
+  drawHunters(ctx, assets, sim);
   drawHawk(ctx, assets, sim);
   drawHen(ctx, assets, sim);
+
+  for (const c of sim.covers) {
+    if (c.kind === "bush") ctx.drawImage(assets.bush, c.x - 16, c.y - 10, c.w + 32, c.h + 22);
+  }
+
   drawParticles(ctx, sim);
 
   if (sim.pop) {
@@ -108,7 +118,8 @@ function drawHen(ctx: CanvasRenderingContext2D, assets: Assets, sim: Sim) {
   const dw = 108;
   const dh = 96;
   const blink = hen.invuln > 0 && Math.floor(hen.invuln * 16) % 2 === 0;
-  if (blink) ctx.globalAlpha = 0.45;
+  if (hen.hidden) ctx.globalAlpha = 0.38;
+  else if (blink) ctx.globalAlpha = 0.45;
   ctx.save();
   ctx.translate(hen.x, hen.y);
   ctx.scale(hen.facing, 1);
@@ -119,14 +130,50 @@ function drawHen(ctx: CanvasRenderingContext2D, assets: Assets, sim: Sim) {
   ctx.globalAlpha = 1;
 }
 
-function drawFox(ctx: CanvasRenderingContext2D, assets: Assets, sim: Sim) {
-  const dw = 150;
-  const dh = 92;
-  for (const f of sim.foxes) {
+function hunterSheet(assets: Assets, kind: Hunter["kind"]) {
+  if (kind === "dog") return assets.dog;
+  if (kind === "bobcat") return assets.bobcat;
+  if (kind === "coyote") return assets.coyote;
+  return assets.fox;
+}
+
+function drawHunters(ctx: CanvasRenderingContext2D, assets: Assets, sim: Sim) {
+  for (const f of sim.hunters) {
+    const dw = f.kind === "dog" ? 168 : f.kind === "coyote" ? 172 : f.kind === "bobcat" ? 142 : 150;
+    const dh = f.kind === "dog" ? 102 : f.kind === "coyote" ? 94 : f.kind === "bobcat" ? 86 : 92;
     ctx.save();
     ctx.translate(f.x, f.y);
     ctx.scale(f.facing, 1);
-    drawSheet(ctx, assets.fox, Math.floor(f.frame), -dw * 0.45, -dh + 8, dw, dh);
+    drawSheet(ctx, hunterSheet(assets, f.kind), Math.floor(f.frame), -dw * 0.45, -dh + 8, dw, dh);
+    ctx.restore();
+    if (f.alert > 0.28) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, f.alert);
+      ctx.fillStyle = "#a33b24";
+      ctx.beginPath();
+      ctx.moveTo(f.x, f.y - dh - 10);
+      ctx.lineTo(f.x - 7, f.y - dh + 4);
+      ctx.lineTo(f.x + 7, f.y - dh + 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f4efe6";
+      ctx.font = "700 11px Nunito Sans, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("!", f.x, f.y - dh - 12);
+      ctx.restore();
+    }
+  }
+}
+
+function drawCritters(ctx: CanvasRenderingContext2D, assets: Assets, sim: Sim) {
+  for (const c of sim.critters) {
+    const dw = c.kind === "dove" ? 54 : 68;
+    const dh = c.kind === "dove" ? 42 : 50;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(c.facing, 1);
+    const sheet = c.kind === "dove" ? assets.dove : assets.rabbit;
+    drawSheet(ctx, sheet, Math.floor(c.frame), -dw * 0.5, -dh + 6, dw, dh);
     ctx.restore();
   }
 }
@@ -172,10 +219,12 @@ export function drawHud(ctx: CanvasRenderingContext2D, sim: Sim, w: number, h: n
   if (mode !== "playing" && mode !== "paused") return;
   const pad = 18;
   const top = 62;
+  const spotted = sim.hunters.some((n) => n.alert > 0.35) || sim.hawk.state === "dive";
+  const inCover = !sim.hen.hidden && !!coverAt(sim.hen, sim.covers);
   ctx.save();
   ctx.font = "600 13px Nunito Sans, sans-serif";
   ctx.fillStyle = "rgba(20,17,14,0.55)";
-  roundRect(ctx, pad, top, 210, 76, 14);
+  roundRect(ctx, pad, top, 210, 92, 14);
   ctx.fill();
 
   ctx.fillStyle = "#f4efe6";
@@ -196,12 +245,27 @@ export function drawHud(ctx: CanvasRenderingContext2D, sim: Sim, w: number, h: n
   ctx.fillText(`Grain  ${sim.score}`, pad + 14, top + 48);
   ctx.font = "500 12px Nunito Sans, sans-serif";
   ctx.fillStyle = "#b7aea0";
-  ctx.fillText(`Day ${sim.level}/${MAX_LEVEL}`, pad + 14, top + 62);
+  ctx.fillText(sim.endless ? `Day ${sim.level}` : `Day ${sim.level}/${MAX_LEVEL}`, pad + 14, top + 62);
   for (let i = 0; i < 3; i++) {
     ctx.fillStyle = i < sim.lives ? "#a33b24" : "#3a342c";
     ctx.beginPath();
     ctx.ellipse(pad + 128 + i * 18, top + 44, 6, 7, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  ctx.font = "600 11px Nunito Sans, sans-serif";
+  if (sim.hen.hidden) {
+    ctx.fillStyle = "#9bb58a";
+    ctx.fillText("Hidden", pad + 14, top + 80);
+  } else if (spotted) {
+    ctx.fillStyle = "#d46a4a";
+    ctx.fillText("Spotted", pad + 14, top + 80);
+  } else if (inCover) {
+    ctx.fillStyle = "#b7aea0";
+    ctx.fillText("Hold still", pad + 14, top + 80);
+  } else if (sim.level === 1 && sim.dayT < 0.14) {
+    ctx.fillStyle = "#8a8174";
+    ctx.fillText("Bush / tree to hide", pad + 14, top + 80);
   }
 
   const remain = Math.max(0, 1 - sim.dayT);

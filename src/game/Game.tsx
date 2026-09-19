@@ -6,7 +6,7 @@ import {
   pollActions,
   setInjectedKeys,
 } from "./input";
-import { cameraFollow, createSim, resetSim, stepSim, type Sim } from "./sim";
+import { cameraFollow, createSim, loadYard, resetSim, stepSim, type Sim } from "./sim";
 import { drawHud, drawWorld } from "./render";
 import { resumeAudio, setMuted, setMusicPaused, startMusic, stopMusic } from "./audio";
 import { useGameUi, type RunKind } from "./store";
@@ -23,6 +23,11 @@ declare global {
       getY?: () => number;
       getInCoop?: () => boolean;
       getLevel?: () => number;
+      getHidden?: () => boolean;
+      getHunterKinds?: () => string[];
+      getCoverCount?: () => number;
+      getLives?: () => number;
+      jumpDay?: (n: number) => void;
     };
   }
 }
@@ -42,6 +47,9 @@ export function startRun(kind: RunKind = "week") {
     hint: "",
     nearCoop: false,
     level: 1,
+    hidden: false,
+    spotted: false,
+    canHide: false,
   });
 }
 
@@ -81,6 +89,10 @@ export function GameCanvas() {
       getY: () => sim.hen.y,
       getInCoop: () => sim.hen.inCoop,
       getLevel: () => sim.level,
+      getHidden: () => sim.hen.hidden,
+      getHunterKinds: () => sim.hunters.map((n) => n.kind),
+      getCoverCount: () => sim.covers.length,
+      getLives: () => sim.lives,
       setKeys: (codes: string[]) => {
         if (codes.length === 0) clearInjectedKeys();
         else setInjectedKeys(codes);
@@ -93,6 +105,24 @@ export function GameCanvas() {
       placeHen: (x: number, y?: number) => {
         sim.hen.x = x;
         if (y != null) sim.hen.y = y;
+      },
+      jumpDay: (n: number) => {
+        sim.endless = true;
+        loadYard(sim, n);
+        sim.score = 0;
+        sim.lives = 3;
+        sim.running = true;
+        useGameUi.getState().setMode("playing");
+        useGameUi.getState().patch({
+          level: n,
+          runKind: "endless",
+          lives: 3,
+          hidden: false,
+          spotted: false,
+          canHide: false,
+          score: 0,
+          nearCoop: false,
+        });
       },
     };
 

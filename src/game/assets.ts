@@ -13,10 +13,17 @@ export type Assets = {
   henLand: Sheet;
   fox: Sheet;
   hawk: Sheet;
+  dog: Sheet;
+  bobcat: Sheet;
+  coyote: Sheet;
+  rabbit: Sheet;
+  dove: Sheet;
   coop: HTMLImageElement;
   hay: HTMLImageElement;
   grain: HTMLImageElement;
   fence: HTMLImageElement;
+  bush: HTMLImageElement;
+  tree: HTMLImageElement;
   sky: HTMLImageElement;
   far: HTMLImageElement;
   mid: HTMLImageElement;
@@ -47,10 +54,17 @@ export async function loadAssets(): Promise<Assets> {
     henLand,
     fox,
     hawk,
+    dog,
+    bobcat,
+    coyote,
+    rabbit,
+    dove,
     coop,
     hay,
     grain,
     fence,
+    bush,
+    tree,
     sky,
     far,
     mid,
@@ -64,10 +78,17 @@ export async function loadAssets(): Promise<Assets> {
     sheet("/sprites/hen/land.png", 2, 2),
     sheet("/sprites/fox/walk.png", 2, 2),
     sheet("/sprites/hawk/soar.png", 2, 2),
+    sheet("/sprites/dog/walk.png", 2, 2),
+    sheet("/sprites/bobcat/walk.png", 2, 2),
+    sheet("/sprites/coyote/walk.png", 2, 2),
+    sheet("/sprites/rabbit/hop.png", 2, 2),
+    sheet("/sprites/dove/flap.png", 2, 2),
     loadImage("/sprites/props/coop.png"),
     loadImage("/sprites/props/hay.png"),
     loadImage("/sprites/props/grain.png"),
     loadImage("/sprites/props/fence.png"),
+    loadImage("/sprites/props/bush.png"),
+    loadImage("/sprites/props/tree.png"),
     loadImage("/map/sky.png"),
     loadImage("/map/far.png"),
     loadImage("/map/mid.png"),
@@ -82,10 +103,17 @@ export async function loadAssets(): Promise<Assets> {
     henLand,
     fox,
     hawk,
+    dog,
+    bobcat,
+    coyote,
+    rabbit,
+    dove,
     coop,
     hay,
     grain,
     fence,
+    bush,
+    tree,
     sky,
     far,
     mid,

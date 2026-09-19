@@ -3,6 +3,24 @@ import { create } from "zustand";
 export type Mode = "boot" | "title" | "playing" | "paused" | "won" | "over";
 export type RunKind = "week" | "endless";
 
+type Patch = Partial<
+  Pick<
+    GameUi,
+    | "score"
+    | "best"
+    | "lives"
+    | "stamina"
+    | "dayT"
+    | "hint"
+    | "nearCoop"
+    | "level"
+    | "runKind"
+    | "hidden"
+    | "spotted"
+    | "canHide"
+  >
+>;
+
 type GameUi = {
   mode: Mode;
   ready: boolean;
@@ -16,9 +34,12 @@ type GameUi = {
   nearCoop: boolean;
   level: number;
   runKind: RunKind;
+  hidden: boolean;
+  spotted: boolean;
+  canHide: boolean;
   setReady: (v: boolean) => void;
   setMode: (m: Mode) => void;
-  patch: (p: Partial<Pick<GameUi, "score" | "best" | "lives" | "stamina" | "dayT" | "hint" | "nearCoop" | "level" | "runKind">>) => void;
+  patch: (p: Patch) => void;
   toggleMute: () => void;
 };
 
@@ -55,6 +76,9 @@ export const useGameUi = create<GameUi>((set, get) => ({
   nearCoop: false,
   level: 1,
   runKind: "week",
+  hidden: false,
+  spotted: false,
+  canHide: false,
   setReady: (v) => set({ ready: v, best: readBest() }),
   setMode: (mode) => set({ mode }),
   patch: (p) => set(p),

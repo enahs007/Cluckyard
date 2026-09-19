@@ -143,6 +143,21 @@ export function sfxHawk() {
   o.stop(t + 0.4);
 }
 
+export function sfxBark() {
+  unlockAudio();
+  if (!ctx || !sfx) return;
+  const t = now();
+  const o = ctx.createOscillator();
+  o.type = "square";
+  o.frequency.setValueAtTime(180, t);
+  o.frequency.exponentialRampToValueAtTime(90, t + 0.16);
+  const g = envGain(0.14, 0.14);
+  if (!g) return;
+  o.connect(g);
+  o.start(t);
+  o.stop(t + 0.18);
+}
+
 export function resumeAudio() {
   if (ctx?.state === "suspended") void ctx.resume();
 }

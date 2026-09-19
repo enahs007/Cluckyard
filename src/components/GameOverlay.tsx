@@ -76,7 +76,7 @@ export function GameShell() {
             <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-muted">A farmyard hen</p>
             <h1 className="mt-2 font-display text-5xl font-medium tracking-tight text-fg sm:text-6xl">Cluckyard</h1>
             <p className="mx-auto mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted sm:text-base">
-              Peck grain, then get home to the coop before dusk. Five dawns — or stay out until night takes you.
+              Peck grain, hide in a bush or tree, then get home before dusk. New hunters join every five days.
             </p>
           </div>
           <div className="pointer-events-auto flex w-full max-w-md flex-col items-center gap-3 px-6">
@@ -98,8 +98,8 @@ export function GameShell() {
           title="Paused"
           body={
             scheme === "keys"
-              ? "Esc to resume. A / D walk, W flap, S peck, E home."
-              : "The yard waits. Stick to walk, Flap, Peck, Home at the coop."
+              ? "Esc to resume. A / D walk, W flap, S peck, E home. Stand still in a bush or tree to hide."
+              : "The yard waits. Stick to walk, Flap, Peck, Home at the coop. Hold still in a bush or tree to hide."
           }
           primary="Resume"
           onPrimary={() => useGameUi.getState().setMode("playing")}
@@ -142,6 +142,7 @@ export function GameShell() {
           </button>
           {scheme === "touch" ? <TouchPad /> : <KeyLegend />}
           <HomePrompt scheme={scheme} />
+          <HidePrompt scheme={scheme} />
         </>
       ) : null}
 
@@ -167,6 +168,10 @@ function ControlsCard() {
       <p className="mt-1.5">
         <span className="font-semibold text-fg">Phone</span>
         <span className="ml-2">Stick to walk · Flap · Peck · Home at the coop</span>
+      </p>
+      <p className="mt-1.5">
+        <span className="font-semibold text-fg">Hide</span>
+        <span className="ml-2">Stand still in a bush or tree. Hunters lose you until you move.</span>
       </p>
     </div>
   );
@@ -366,6 +371,25 @@ function HomePrompt({ scheme }: { scheme: Scheme }) {
       }`}
     >
       {last ? `${action} — finish the week` : `${action} — start day ${level + 1}`}
+    </p>
+  );
+}
+
+function HidePrompt({ scheme }: { scheme: Scheme }) {
+  const hidden = useGameUi((s) => s.hidden);
+  const spotted = useGameUi((s) => s.spotted);
+  const canHide = useGameUi((s) => s.canHide);
+  const near = useGameUi((s) => s.nearCoop);
+  if (near || (!hidden && !spotted && !canHide)) return null;
+  const text = hidden ? "Hidden — they can't see you" : canHide ? "Hold still to hide" : "Spotted — duck into cover";
+  const tone = hidden ? "text-sage" : spotted && !canHide ? "text-danger" : "text-fg";
+  return (
+    <p
+      className={`pointer-events-none absolute inset-x-0 z-10 text-center font-display text-lg tracking-tight ${tone} ${
+        scheme === "touch" ? "top-20" : "top-16"
+      }`}
+    >
+      {text}
     </p>
   );
 }

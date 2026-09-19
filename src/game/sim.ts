@@ -8,6 +8,7 @@ import {
   sfxLand,
   sfxPeck,
   sfxPickup,
+  sfxBark,
   stopMusic,
 } from "./audio";
 import { useGameUi, writeBest } from "./store";
@@ -37,7 +38,7 @@ const JUMP_BUF = 0.13;
 const HEN_HW = 22;
 const HEN_H = 50;
 
-export type Kind = "ground" | "roof" | "hay" | "fence";
+export type Kind = "ground" | "roof" | "hay" | "fence" | "branch";
 
 export type Platform = {
   x: number;
@@ -83,17 +84,44 @@ export type Hen = {
   hurtT: number;
   invuln: number;
   inCoop: boolean;
+  hidden: boolean;
 };
 
-export type Fox = {
+export type HunterKind = "fox" | "dog" | "bobcat" | "coyote";
+
+export type Hunter = {
+  kind: HunterKind;
   x: number;
   y: number;
   vx: number;
   facing: 1 | -1;
-  state: "patrol" | "stalk" | "lunge";
+  state: "patrol" | "stalk" | "lunge" | "search";
   frame: number;
   t: number;
   lungeCd: number;
+  alert: number;
+  lastSeen: number;
+};
+
+export type CoverKind = "bush" | "tree";
+
+export type Cover = {
+  kind: CoverKind;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type Critter = {
+  kind: "rabbit" | "dove";
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  facing: 1 | -1;
+  frame: number;
+  t: number;
 };
 
 export type Hawk = {
@@ -110,10 +138,12 @@ export type Hawk = {
 
 export type Sim = {
   hen: Hen;
-  foxes: Fox[];
+  hunters: Hunter[];
   hawk: Hawk;
   plats: Platform[];
   grains: Grain[];
+  covers: Cover[];
+  critters: Critter[];
   particles: Particle[];
   score: number;
   lives: number;
@@ -152,20 +182,50 @@ function foxMul(level: number) {
   return 1 + (level - 1) * 0.14;
 }
 
-function spawnFoxes(level: number): Fox[] {
-  const foxes: Fox[] = [
-    { x: 1380, y: GROUND_Y, vx: -70, facing: -1, state: "patrol", frame: 0, t: 0, lungeCd: 0 },
-  ];
-  if (level >= 3) {
-    foxes.push({ x: 2480, y: GROUND_Y, vx: 80, facing: 1, state: "patrol", frame: 1.2, t: 2.1, lungeCd: 0.4 });
-  }
-  if (level >= 6) {
-    foxes.push({ x: 1960, y: GROUND_Y, vx: -90, facing: -1, state: "patrol", frame: 0.4, t: 1.1, lungeCd: 0.2 });
-  }
-  if (level >= 8) {
-    foxes.push({ x: 3180, y: GROUND_Y, vx: 100, facing: 1, state: "patrol", frame: 2, t: 0.6, lungeCd: 0.1 });
-  }
-  return foxes;
+function spawnHunters(level: number): Hunter[] {
+  const pack: Hunter[] = [makeHunter("fox", 1380, -1)];
+  if (level >= 3) pack.push(makeHunter("fox", 2480, 1));
+  if (level >= 6) pack.push(makeHunter("dog", 1860, -1));
+  if (level >= 8) pack.push(makeHunter("fox", 3180, 1));
+  if (level >= 11) pack.push(makeHunter("bobcat", 720, 1));
+  if (level >= 16) pack.push(makeHunter("coyote", 2700, -1));
+  if (level >= 21) pack.push(makeHunter("dog", 1100, 1));
+  if (level >= 26) pack.push(makeHunter("bobcat", 2100, -1));
+  if (level >= 31) pack.push(makeHunter("coyote", 3400, 1));
+  return pack;
+}
+
+function makeHunter(kind: HunterKind, x: number, facing: 1 | -1): Hunter {
+  return {
+    kind,
+    x,
+    y: GROUND_Y,
+    vx: facing * 70,
+    facing,
+    state: "patrol",
+    frame: 0,
+    t: kind === "fox" ? 0 : 1.1,
+    lungeCd: 0,
+    alert: 0,
+    lastSeen: x,
+  };
+}
+
+function hunterStats(kind: HunterKind) {
+  if (kind === "dog") return { patrol: 108, stalk: 198, lunge: 340, detect: 340, reach: 80, air: 28 };
+  if (kind === "bobcat") return { patrol: 72, stalk: 176, lunge: 410, detect: 210, reach: 88, air: 110 };
+  if (kind === "coyote") return { patrol: 102, stalk: 214, lunge: 355, detect: 390, reach: 76, air: 36 };
+  return { patrol: 78, stalk: 150, lunge: 280, detect: 240, reach: 70, air: 22 };
+}
+
+function predatorUnlock(level: number) {
+  if (level === 6) return "A farm dog joined the hunt.";
+  if (level === 11) return "A bobcat slipped into the yard.";
+  if (level === 16) return "A coyote came down from the hills.";
+  if (level === 21) return "Another dog caught the scent.";
+  if (level === 26) return "A second bobcat.";
+  if (level === 31) return "The hills sent another coyote.";
+  return "";
 }
 
 function goHome(sim: Sim) {
@@ -194,9 +254,16 @@ function goHome(sim: Sim) {
   sim.lives = lives;
   sim.hen.invuln = 1.5;
   const lastWeek = !sim.endless && next >= MAX_LEVEL;
+  const unlock = predatorUnlock(next);
   sim.banner = {
     text: `Day ${next}`,
-    sub: lastWeek ? "Last dawn — get home" : sim.endless && next > MAX_LEVEL ? "The yard doesn't rest." : "A harder yard. Get home before dusk.",
+    sub: unlock
+      ? unlock
+      : lastWeek
+        ? "Last dawn — get home"
+        : sim.endless && next > MAX_LEVEL
+          ? "The yard doesn't rest."
+          : "A harder yard. Get home before dusk.",
     t: 2.4,
   };
   useGameUi.getState().patch({
@@ -207,6 +274,9 @@ function goHome(sim: Sim) {
     hint: "",
     level: next,
     stamina: 1,
+    hidden: false,
+    spotted: false,
+    canHide: false,
   });
 }
 
@@ -236,10 +306,11 @@ function spawnHen(): Hen {
     hurtT: 0,
     invuln: 0,
     inCoop: false,
+    hidden: false,
   };
 }
 
-export function createLevel(level = 1): Pick<Sim, "plats" | "grains"> {
+export function createLevel(level = 1): Pick<Sim, "plats" | "grains" | "covers"> {
   const plats: Platform[] = [
     { x: -40, y: GROUND_Y, w: WORLD_W + 80, h: 220, oneWay: false, kind: "ground" },
     { x: COOP.x + 18, y: COOP.y + 18, w: COOP.w - 50, h: 18, oneWay: true, kind: "roof" },
@@ -251,6 +322,10 @@ export function createLevel(level = 1): Pick<Sim, "plats" | "grains"> {
   const fenceX = [1080, 1960, 2740];
   for (const x of fenceX) {
     plats.push({ x: x + 16, y: GROUND_Y - 118, w: 200, h: 14, oneWay: true, kind: "fence" });
+  }
+  const treeX = [980, 2580];
+  for (const x of treeX) {
+    plats.push({ x: x - 24, y: GROUND_Y - 148, w: 70, h: 12, oneWay: true, kind: "branch" });
   }
 
   const grains: Grain[] = [];
@@ -269,18 +344,38 @@ export function createLevel(level = 1): Pick<Sim, "plats" | "grains"> {
     grains.push({ x: 1960, y: GROUND_Y - 128, taken: false, bob: 6 });
     grains.push({ x: 3180, y: GROUND_Y - 96, taken: false, bob: 7 });
   }
-  return { plats, grains };
+
+  const covers: Cover[] = [
+    { kind: "bush", x: 560, y: GROUND_Y - 72, w: 124, h: 76 },
+    { kind: "bush", x: 1660, y: GROUND_Y - 72, w: 124, h: 76 },
+    { kind: "bush", x: 2860, y: GROUND_Y - 72, w: 124, h: 76 },
+    { kind: "tree", x: 930, y: GROUND_Y - 236, w: 112, h: 240 },
+    { kind: "tree", x: 2530, y: GROUND_Y - 236, w: 112, h: 240 },
+  ];
+  return { plats, grains, covers };
 }
 
-function loadYard(sim: Sim, level: number) {
-  const { plats, grains } = createLevel(level);
+function spawnCritters(): Critter[] {
+  return [
+    { kind: "rabbit", x: 520, y: GROUND_Y, vx: 40, vy: 0, facing: 1, frame: 0, t: 0 },
+    { kind: "rabbit", x: 1580, y: GROUND_Y, vx: -36, vy: 0, facing: -1, frame: 1.2, t: 2 },
+    { kind: "rabbit", x: 3020, y: GROUND_Y, vx: 32, vy: 0, facing: 1, frame: 0.4, t: 1 },
+    { kind: "dove", x: 880, y: GROUND_Y - 168, vx: 50, vy: 0, facing: 1, frame: 0, t: 0.6 },
+    { kind: "dove", x: 2140, y: GROUND_Y - 188, vx: -44, vy: 0, facing: -1, frame: 2, t: 1.4 },
+  ];
+}
+
+export function loadYard(sim: Sim, level: number) {
+  const { plats, grains, covers } = createLevel(level);
   sim.level = level;
   sim.dayLen = dayLenFor(level);
   sim.hen = spawnHen();
-  sim.foxes = spawnFoxes(level);
+  sim.hunters = spawnHunters(level);
   sim.hawk = { x: 1100, y: 170, vx: 110, vy: 0, facing: 1, state: "soar", frame: 0, t: 0, exposed: 0 };
   sim.plats = plats;
   sim.grains = grains;
+  sim.covers = covers;
+  sim.critters = spawnCritters();
   sim.particles = [];
   sim.dayT = 0;
   sim.trauma = 0;
@@ -292,13 +387,15 @@ function loadYard(sim: Sim, level: number) {
 }
 
 export function createSim(): Sim {
-  const { plats, grains } = createLevel(1);
+  const { plats, grains, covers } = createLevel(1);
   return {
     hen: spawnHen(),
-    foxes: spawnFoxes(1),
+    hunters: spawnHunters(1),
     hawk: { x: 900, y: 168, vx: 110, vy: 0, facing: 1, state: "soar", frame: 0, t: 0, exposed: 0 },
     plats,
     grains,
+    covers,
+    critters: spawnCritters(),
     particles: [],
     score: 0,
     lives: 3,
@@ -385,6 +482,8 @@ function resolveHen(sim: Sim, prevBottom: number) {
 function syncUi(sim: Sim, hint = "") {
   const mode = useGameUi.getState().mode;
   if (mode !== "playing" && mode !== "paused") return;
+  const spotted = sim.hunters.some((n) => n.alert > 0.35) || sim.hawk.state === "dive";
+  const cover = coverAt(sim.hen, sim.covers);
   useGameUi.getState().patch({
     score: sim.score,
     lives: sim.lives,
@@ -392,10 +491,36 @@ function syncUi(sim: Sim, hint = "") {
     dayT: sim.dayT,
     level: sim.level,
     hint,
+    hidden: sim.hen.hidden,
+    spotted,
+    canHide: !!cover && !sim.hen.hidden,
   });
 }
 
+export function coverAt(hen: Hen, covers: Cover[]): Cover | null {
+  for (const c of covers) {
+    if (hen.x < c.x || hen.x > c.x + c.w) continue;
+    if (c.kind === "bush") {
+      if (hen.grounded && hen.y >= GROUND_Y - 12) return c;
+    } else if (hen.y <= GROUND_Y && hen.y >= c.y) {
+      return c;
+    }
+  }
+  return null;
+}
+
+function updateHide(sim: Sim, flapping: boolean) {
+  const h = sim.hen;
+  const cover = coverAt(h, sim.covers);
+  const still = Math.abs(h.vx) < 52 && !flapping && h.hurtT <= 0 && h.peckT <= 0;
+  const next = !!(cover && still && !h.inCoop);
+  if (next && !h.hidden) emit(sim, "dust", h.x, h.y - 8, 5, h.facing);
+  h.hidden = next;
+}
+
 function catchHen(sim: Sim) {
+  if (!sim.running || sim.lives <= 0) return;
+  if (sim.hen.hidden) return;
   if (sim.hen.invuln > 0 || sim.hen.hurtT > 0) return;
   sim.hen.hurtT = 0.7;
   sim.hen.invuln = 1.6;
@@ -439,7 +564,7 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
 
   if (attract) {
     h.stamina = MAX_STAMINA;
-    const phase = (sim.foxes[0]?.t ?? 0) % 8;
+    const phase = (sim.hunters[0]?.t ?? 0) % 8;
     moveX = phase < 3 ? 0.6 : phase < 5 ? 0 : -0.4;
     jump = phase > 5.2 && phase < 6.4;
     jumpPressed = jump && h.grounded;
@@ -573,10 +698,32 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
   h.pitch += (targetPitch - h.pitch) * (1 - Math.exp(-10 * dt));
 
   h.inCoop = atCoop(h);
+  updateHide(sim, flapping);
   if (sim.running && !attract) {
     const ui = useGameUi.getState();
-    if (ui.mode === "playing" && ui.nearCoop !== h.inCoop) {
-      ui.patch({ nearCoop: h.inCoop, hint: h.inCoop ? (sim.endless || sim.level < MAX_LEVEL ? "Home — next day" : "Home — finish the week") : "" });
+    const spotted = sim.hunters.some((n) => n.alert > 0.35) || sim.hawk.state === "dive";
+    const cover = coverAt(h, sim.covers);
+    const hideHint = h.hidden ? "Hidden" : cover ? "Hold still to hide" : "";
+    const nextHint = h.inCoop
+      ? sim.endless || sim.level < MAX_LEVEL
+        ? "Home — next day"
+        : "Home — finish the week"
+      : hideHint;
+    if (
+      ui.mode === "playing" &&
+      (ui.nearCoop !== h.inCoop ||
+        ui.hidden !== h.hidden ||
+        ui.spotted !== spotted ||
+        ui.canHide !== (!!cover && !h.hidden) ||
+        ui.hint !== nextHint)
+    ) {
+      ui.patch({
+        nearCoop: h.inCoop,
+        hidden: h.hidden,
+        spotted,
+        canHide: !!cover && !h.hidden,
+        hint: nextHint,
+      });
     }
     if (actions.enterPressed && h.inCoop && h.hurtT <= 0) goHome(sim);
   }
@@ -614,8 +761,9 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
 
   for (const g0 of sim.grains) g0.bob += dt;
 
-  stepFox(sim, dt, attract);
+  stepHunters(sim, dt, attract);
   stepHawk(sim, dt, attract);
+  stepCritters(sim, dt);
 
   for (const p of sim.particles) {
     p.life -= dt / p.max;
@@ -643,25 +791,44 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
   }
 }
 
-function stepFox(sim: Sim, dt: number, attract: boolean) {
+function stepHunters(sim: Sim, dt: number, attract: boolean) {
   const mul = foxMul(sim.level);
-  for (const f of sim.foxes) stepOneFox(sim, f, dt, attract, mul);
+  for (const f of sim.hunters) stepOneHunter(sim, f, dt, attract, mul);
 }
 
-function stepOneFox(sim: Sim, f: Fox, dt: number, attract: boolean, mul: number) {
+function stepOneHunter(sim: Sim, f: Hunter, dt: number, attract: boolean, mul: number) {
   const h = sim.hen;
+  const st = hunterStats(f.kind);
   f.t += dt;
   f.lungeCd = Math.max(0, f.lungeCd - dt);
   const dist = h.x - f.x;
-  const close = Math.abs(dist) < 240 && h.grounded && !h.inCoop && h.y > GROUND_Y - 20;
-  const reach = Math.abs(dist) < 70 && h.grounded && !h.inCoop && Math.abs(h.y - f.y) < 30;
+  const abs = Math.abs(dist);
+  const airborneOk = GROUND_Y - h.y < st.air;
+  const see =
+    !attract &&
+    sim.running &&
+    !h.hidden &&
+    !h.inCoop &&
+    abs < st.detect &&
+    airborneOk;
+  const reach = see && abs < st.reach && Math.abs(h.y - f.y) < 36 + (f.kind === "bobcat" ? 40 : 0);
+
+  if (see) {
+    f.lastSeen = h.x;
+    if (f.alert < 0.2 && f.kind === "dog") sfxBark();
+    f.alert = Math.min(1, f.alert + dt * 2.4);
+  } else {
+    f.alert = Math.max(0, f.alert - dt * 0.55);
+  }
 
   if (attract) {
     f.state = "patrol";
   } else if (reach && f.lungeCd <= 0) {
     f.state = "lunge";
-  } else if (close) {
+  } else if (see) {
     f.state = "stalk";
+  } else if (f.alert > 0.12) {
+    f.state = "search";
   } else {
     f.state = "patrol";
   }
@@ -669,18 +836,23 @@ function stepOneFox(sim: Sim, f: Fox, dt: number, attract: boolean, mul: number)
   if (f.state === "patrol") {
     if (f.x < 480) f.facing = 1;
     if (f.x > COOP.x - 220) f.facing = -1;
-    f.vx = f.facing * 78 * mul;
+    f.vx = f.facing * st.patrol * mul;
+  } else if (f.state === "search") {
+    const dir = (f.lastSeen >= f.x ? 1 : -1) as 1 | -1;
+    f.facing = dir;
+    f.vx = dir * st.patrol * 0.85 * mul;
+    if (Math.abs(f.x - f.lastSeen) < 18) f.alert = Math.max(0, f.alert - dt);
   } else if (f.state === "stalk") {
     f.facing = dist > 0 ? 1 : -1;
-    f.vx = f.facing * 150 * mul;
+    f.vx = f.facing * st.stalk * mul;
   } else {
     f.facing = dist > 0 ? 1 : -1;
-    f.vx = f.facing * 280 * mul;
+    f.vx = f.facing * st.lunge * mul;
     f.lungeCd = 0.9;
   }
   f.x += f.vx * dt;
   f.y = GROUND_Y;
-  f.frame += (f.state === "lunge" ? 12 : 7) * dt;
+  f.frame += (f.state === "lunge" ? 13 : 7) * dt;
 
   if (!attract && sim.running && reach && h.invuln <= 0) catchHen(sim);
 }
@@ -689,9 +861,9 @@ function stepHawk(sim: Sim, dt: number, attract: boolean) {
   const k = sim.hawk;
   const h = sim.hen;
   k.t += dt;
-  const high = !h.grounded && h.y < GROUND_Y - 150 && !h.inCoop;
+  const high = !h.grounded && h.y < GROUND_Y - 150 && !h.inCoop && !h.hidden;
   if (high) k.exposed += dt;
-  else k.exposed = Math.max(0, k.exposed - dt * 0.6);
+  else k.exposed = Math.max(0, k.exposed - dt * (h.hidden ? 1.4 : 0.6));
 
   const exposeNeed = Math.max(0.28, 0.85 - (sim.level - 1) * 0.13);
   const diveSp = 420 + (sim.level - 1) * 42;
@@ -700,7 +872,7 @@ function stepHawk(sim: Sim, dt: number, attract: boolean) {
   else if (k.state === "soar" && k.exposed > exposeNeed && sim.running) {
     k.state = "dive";
     sfxHawk();
-  } else if (k.state === "dive" && (h.grounded || h.inCoop || k.y > GROUND_Y - 70)) {
+  } else if (k.state === "dive" && (h.hidden || h.grounded || h.inCoop || k.y > GROUND_Y - 70)) {
     k.state = "climb";
   } else if (k.state === "climb" && k.y < 180) {
     k.state = "soar";
@@ -729,8 +901,44 @@ function stepHawk(sim: Sim, dt: number, attract: boolean) {
   k.y += k.vy * dt;
   k.frame += (k.state === "dive" ? 14 : 7) * dt;
 
-  const hit = Math.hypot(k.x - h.x, k.y - (h.y - 28)) < 46;
-  if (!attract && sim.running && k.state === "dive" && hit && h.invuln <= 0) catchHen(sim);
+  const hit = Math.abs(k.x - h.x) < 38 && Math.abs(k.y - (h.y - 28)) < 36;
+  if (!attract && sim.running && k.state === "dive" && hit && h.invuln <= 0 && !h.hidden) catchHen(sim);
+}
+
+function stepCritters(sim: Sim, dt: number) {
+  const h = sim.hen;
+  for (const c of sim.critters) {
+    c.t += dt;
+    let scare = 0;
+    if (Math.abs(c.x - h.x) < 130 && Math.abs(c.y - h.y) < 90) scare = h.x >= c.x ? -1 : 1;
+    for (const n of sim.hunters) {
+      if (Math.abs(c.x - n.x) < 160) scare = n.x >= c.x ? -1 : 1;
+    }
+    if (scare) {
+      c.facing = scare as 1 | -1;
+      c.vx = scare * (c.kind === "dove" ? 210 : 160);
+    } else if (c.kind === "rabbit") {
+      if (c.x < 200) c.facing = 1;
+      if (c.x > WORLD_W - 200) c.facing = -1;
+      c.vx = c.facing * 38;
+      c.y = GROUND_Y;
+    } else {
+      if (c.x < 200) c.facing = 1;
+      if (c.x > WORLD_W - 200) c.facing = -1;
+      c.vx = c.facing * 46;
+      c.y += Math.sin(c.t * 2.2) * 10 * dt;
+    }
+    c.x += c.vx * dt;
+    if (c.x < 80) {
+      c.x = 80;
+      c.facing = 1;
+    }
+    if (c.x > WORLD_W - 80) {
+      c.x = WORLD_W - 80;
+      c.facing = -1;
+    }
+    c.frame += (Math.abs(c.vx) > 80 ? 12 : 6) * dt;
+  }
 }
 
 export function cameraFollow(sim: Sim, viewW: number, viewH: number, dt: number) {
