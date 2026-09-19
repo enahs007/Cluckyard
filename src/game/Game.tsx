@@ -8,8 +8,8 @@ import {
 } from "./input";
 import { cameraFollow, createSim, resetSim, stepSim, type Sim } from "./sim";
 import { drawHud, drawWorld } from "./render";
-import { resumeAudio, setMuted } from "./audio";
-import { useGameUi } from "./store";
+import { resumeAudio, setMuted, setMusicPaused, startMusic, stopMusic } from "./audio";
+import { useGameUi, type RunKind } from "./store";
 
 declare global {
   interface Window {
@@ -30,14 +30,24 @@ declare global {
 const FIXED = 1 / 60;
 let bootCmd: "play" | "attract" | null = null;
 
-export function startRun() {
+export function startRun(kind: RunKind = "week") {
   bootCmd = "play";
   useGameUi.getState().setMode("playing");
-  useGameUi.getState().patch({ score: 0, lives: 3, stamina: 1, dayT: 0, hint: "", nearCoop: false, level: 1 });
+  useGameUi.getState().patch({
+    runKind: kind,
+    score: 0,
+    lives: 3,
+    stamina: 1,
+    dayT: 0,
+    hint: "",
+    nearCoop: false,
+    level: 1,
+  });
 }
 
 export function returnToTitle() {
   bootCmd = "attract";
+  stopMusic();
   useGameUi.getState().setMode("title");
 }
 
@@ -61,6 +71,7 @@ export function GameCanvas() {
     let last = performance.now();
     let raf = 0;
     let running = true;
+    let lastPaused = false;
     const unbind = attachInput(canvas);
 
     window.__controlsTest = {
@@ -118,14 +129,21 @@ export function GameCanvas() {
       acc += raw;
       if (bootCmd === "play") {
         resetSim(sim, false);
+        startMusic();
         bootCmd = null;
       } else if (bootCmd === "attract") {
         resetSim(sim, true);
+        stopMusic();
         bootCmd = null;
       }
       const mode = useGameUi.getState().mode;
       sim.running = mode === "playing";
       sim.attract = mode === "title" || mode === "boot";
+      const paused = mode === "paused";
+      if (paused !== lastPaused) {
+        setMusicPaused(paused);
+        lastPaused = paused;
+      }
 
       const cssW = canvas.clientWidth;
       const cssH = canvas.clientHeight;

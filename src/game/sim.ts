@@ -1,11 +1,14 @@
 import type { Actions } from "./input";
 import {
+  rumble,
+  setMusicDusk,
   sfxFlap,
   sfxHawk,
   sfxHurt,
   sfxLand,
   sfxPeck,
   sfxPickup,
+  stopMusic,
 } from "./audio";
 import { useGameUi, writeBest } from "./store";
 
@@ -122,6 +125,7 @@ export type Sim = {
   camY: number;
   running: boolean;
   attract: boolean;
+  endless: boolean;
   pop: { x: number; y: number; t: number; text: string } | null;
   banner: { text: string; sub: string; t: number } | null;
   shakeX: number;
@@ -139,7 +143,9 @@ export function atCoop(h: Hen) {
 }
 
 function dayLenFor(level: number) {
-  return [88, 76, 66, 56, 48][Math.max(0, Math.min(MAX_LEVEL, level) - 1)] ?? 48;
+  const week = [88, 76, 66, 56, 48];
+  if (level <= MAX_LEVEL) return week[level - 1] ?? 48;
+  return Math.max(34, 48 - (level - MAX_LEVEL) * 3);
 }
 
 function foxMul(level: number) {
@@ -152,6 +158,12 @@ function spawnFoxes(level: number): Fox[] {
   ];
   if (level >= 3) {
     foxes.push({ x: 2480, y: GROUND_Y, vx: 80, facing: 1, state: "patrol", frame: 1.2, t: 2.1, lungeCd: 0.4 });
+  }
+  if (level >= 6) {
+    foxes.push({ x: 1960, y: GROUND_Y, vx: -90, facing: -1, state: "patrol", frame: 0.4, t: 1.1, lungeCd: 0.2 });
+  }
+  if (level >= 8) {
+    foxes.push({ x: 3180, y: GROUND_Y, vx: 100, facing: 1, state: "patrol", frame: 2, t: 0.6, lungeCd: 0.1 });
   }
   return foxes;
 }
@@ -166,7 +178,8 @@ function goHome(sim: Sim) {
   sim.score += bonus;
   sim.pop = { x: sim.hen.x, y: sim.hen.y - 42, t: 0.9, text: `+${bonus}` };
   sfxPickup();
-  if (sim.level >= MAX_LEVEL) {
+  rumble(22);
+  if (!sim.endless && sim.level >= MAX_LEVEL) {
     sim.running = false;
     const best = writeBest(sim.score);
     useGameUi.getState().patch({ score: sim.score, best, nearCoop: false, hint: "", level: sim.level });
@@ -180,7 +193,12 @@ function goHome(sim: Sim) {
   sim.score = score;
   sim.lives = lives;
   sim.hen.invuln = 1.5;
-  sim.banner = { text: `Day ${next}`, sub: next >= MAX_LEVEL ? "Last dawn — get home" : "A harder yard. Get home before dusk.", t: 2.4 };
+  const lastWeek = !sim.endless && next >= MAX_LEVEL;
+  sim.banner = {
+    text: `Day ${next}`,
+    sub: lastWeek ? "Last dawn — get home" : sim.endless && next > MAX_LEVEL ? "The yard doesn't rest." : "A harder yard. Get home before dusk.",
+    t: 2.4,
+  };
   useGameUi.getState().patch({
     score,
     lives,
@@ -292,6 +310,7 @@ export function createSim(): Sim {
     camY: 80,
     running: false,
     attract: true,
+    endless: false,
     pop: null,
     banner: null,
     shakeX: 0,
@@ -303,9 +322,12 @@ export function resetSim(sim: Sim, attract = false) {
   loadYard(sim, 1);
   sim.score = 0;
   sim.lives = 3;
+  sim.endless = useGameUi.getState().runKind === "endless";
   sim.running = !attract;
   sim.attract = attract;
-  sim.banner = attract ? null : { text: "Day 1", sub: "Get home before dusk.", t: 2.2 };
+  sim.banner = attract
+    ? null
+    : { text: "Day 1", sub: sim.endless ? "Stay out as long as you can." : "Get home before dusk.", t: 2.2 };
 }
 
 function emit(sim: Sim, kind: Particle["kind"], x: number, y: number, n: number, facing = 1) {
@@ -384,11 +406,13 @@ function catchHen(sim: Sim) {
   sim.trauma = Math.min(1, sim.trauma + 0.55);
   emit(sim, "feather", sim.hen.x, sim.hen.y - 28, 14, sim.hen.facing);
   sfxHurt();
+  rumble(32);
   if (sim.lives <= 0) {
     sim.running = false;
     const best = writeBest(sim.score);
     useGameUi.getState().patch({ lives: 0, score: sim.score, best });
     useGameUi.getState().setMode("over");
+    stopMusic();
   } else {
     syncUi(sim, "Back at the start — try again");
   }
@@ -422,6 +446,7 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
     peck = phase > 3.1 && phase < 4.2;
   } else if (sim.running) {
     sim.dayT = Math.min(1, sim.dayT + dt / sim.dayLen);
+    setMusicDusk(sim.dayT);
   }
 
   if (h.hurtT > 0) {
@@ -551,7 +576,7 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
   if (sim.running && !attract) {
     const ui = useGameUi.getState();
     if (ui.mode === "playing" && ui.nearCoop !== h.inCoop) {
-      ui.patch({ nearCoop: h.inCoop, hint: h.inCoop ? (sim.level >= MAX_LEVEL ? "Home — finish the week" : "Home — next day") : "" });
+      ui.patch({ nearCoop: h.inCoop, hint: h.inCoop ? (sim.endless || sim.level < MAX_LEVEL ? "Home — next day" : "Home — finish the week") : "" });
     }
     if (actions.enterPressed && h.inCoop && h.hurtT <= 0) goHome(sim);
   }
@@ -565,6 +590,7 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
         sim.pop = { x: g0.x, y: g0.y - 30, t: 0.7, text: "+10" };
         emit(sim, "seed", g0.x, g0.y, 8);
         if (!attract) sfxPickup();
+        if (!attract) rumble(10);
         syncUi(sim);
       }
     }
@@ -612,6 +638,7 @@ export function stepSim(sim: Sim, actions: Actions, dt: number) {
       const best = writeBest(sim.score);
       useGameUi.getState().patch({ score: sim.score, best, dayT: 1, nearCoop: false });
       useGameUi.getState().setMode("over");
+      stopMusic();
     }
   }
 }

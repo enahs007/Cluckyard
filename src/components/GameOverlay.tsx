@@ -55,9 +55,9 @@ export function GameShell() {
   const toggleMute = useGameUi((s) => s.toggleMute);
   const scheme = useControlScheme();
 
-  const play = () => {
+  const play = (kind: "week" | "endless" = "week") => {
     unlockAudio();
-    startRun();
+    startRun(kind);
   };
 
   return (
@@ -76,13 +76,16 @@ export function GameShell() {
             <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-muted">A farmyard hen</p>
             <h1 className="mt-2 font-display text-5xl font-medium tracking-tight text-fg sm:text-6xl">Cluckyard</h1>
             <p className="mx-auto mt-3 max-w-md text-pretty text-sm leading-relaxed text-muted sm:text-base">
-              Five dawns. Peck grain, then get home to the coop before dusk. Each day the yard gets harder.
+              Peck grain, then get home to the coop before dusk. Five dawns — or stay out until night takes you.
             </p>
           </div>
           <div className="pointer-events-auto flex w-full max-w-md flex-col items-center gap-3 px-6">
-            <Button onClick={play} className="w-full">
+            <Button onClick={() => play("week")} className="w-full">
               <Play className="size-4" strokeWidth={2} />
-              Play
+              Five dawns
+            </Button>
+            <Button variant="ghost" onClick={() => play("endless")} className="w-full">
+              Endless yard
             </Button>
             <ControlsCard />
             <p className="text-center text-xs text-subtle">Best {best}</p>
@@ -109,8 +112,8 @@ export function GameShell() {
         <Panel
           title="Five dawns home"
           body={`You roosted every night. Grain ${score} · Best ${best}`}
-          primary="Another dawn"
-          onPrimary={play}
+          primary="Another week"
+          onPrimary={() => play("week")}
           secondary="Yard"
           onSecondary={returnToTitle}
         />
@@ -121,7 +124,7 @@ export function GameShell() {
           title="Night on the yard"
           body={`Night fell on day ${level}. Grain ${score} · Best ${best}. Get home before dusk.`}
           primary="Try again"
-          onPrimary={play}
+          onPrimary={() => play(useGameUi.getState().runKind)}
           secondary="Yard"
           onSecondary={returnToTitle}
         />
@@ -350,8 +353,9 @@ function TouchStick() {
 function HomePrompt({ scheme }: { scheme: Scheme }) {
   const near = useGameUi((s) => s.nearCoop);
   const level = useGameUi((s) => s.level);
+  const endless = useGameUi((s) => s.runKind) === "endless";
   if (!near) return null;
-  const last = level >= MAX_LEVEL;
+  const last = !endless && level >= MAX_LEVEL;
   const action = scheme === "keys" ? "Press E" : "tap Home";
   return (
     <p
